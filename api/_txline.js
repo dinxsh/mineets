@@ -2,11 +2,26 @@ import { initialMatchSnapshot, normalizeFixture, normalizeTxLine } from "../src/
 
 const DEFAULT_MAINNET_ORIGIN = "https://txline.txodds.com";
 const DEFAULT_DEVNET_ORIGIN = "https://txline-dev.txodds.com";
+const NETWORKS = {
+  mainnet: {
+    rpcUrl: "https://api.mainnet-beta.solana.com",
+    programId: "9ExbZjAapQww1vfcisDmrngPinHTEfpjYRWMunJgcKaA",
+    txlTokenMint: "Zhw9TVKp68a1QrftncMSd6ELXKDtpVMNuMGr1jNwdeL",
+    defaultOrigin: DEFAULT_MAINNET_ORIGIN,
+  },
+  devnet: {
+    rpcUrl: "https://api.devnet.solana.com",
+    programId: "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J",
+    txlTokenMint: "4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG",
+    defaultOrigin: DEFAULT_DEVNET_ORIGIN,
+  },
+};
 
 export function getServerConfig() {
   const network = process.env.TXLINE_NETWORK || "mainnet";
+  const networkConfig = NETWORKS[network] || NETWORKS.mainnet;
   const origin = stripTrailingSlash(
-    process.env.TXLINE_ORIGIN || (network === "devnet" ? DEFAULT_DEVNET_ORIGIN : DEFAULT_MAINNET_ORIGIN),
+    process.env.TXLINE_ORIGIN || networkConfig.defaultOrigin,
   );
   const guestJwt = process.env.TXLINE_JWT;
   const apiToken = process.env.TXLINE_API_TOKEN;
@@ -18,6 +33,9 @@ export function getServerConfig() {
     origin,
     apiBaseUrl: `${origin}/api`,
     guestAuthUrl: `${origin}/auth/guest/start`,
+    rpcUrl: process.env.ANCHOR_PROVIDER_URL || networkConfig.rpcUrl,
+    programId: networkConfig.programId,
+    txlTokenMint: process.env.TOKEN_MINT_ADDRESS || networkConfig.txlTokenMint,
     serviceLevel,
     fixtureId,
     hasGuestJwt: hasValue(guestJwt),
@@ -40,6 +58,9 @@ export function readinessPayload() {
     apiOrigin: config.origin,
     apiBaseUrl: config.apiBaseUrl,
     guestAuthUrl: config.guestAuthUrl,
+    rpcUrl: config.rpcUrl,
+    programId: config.programId,
+    txlTokenMint: config.txlTokenMint,
     serviceLevel: config.serviceLevel,
     configured: config.configured,
     hasGuestJwt: config.hasGuestJwt,
@@ -66,6 +87,22 @@ export async function fetchServerSnapshot(fixtureId) {
   ]);
 
   return normalizeTxLine(snapshotPayload, updatesPayload, initialMatchSnapshot, fixtureId);
+}
+
+export async function fetchScoreValidation({ fixtureId, seq, statKey, statKeys }) {
+  if (!fixtureId) throw httpError(400, "fixtureId is required");
+  if (!seq) throw httpError(400, "seq is required");
+  if (!statKey && !statKeys) throw httpError(400, "statKey or statKeys is required");
+
+  const config = requireConfiguredTxLine();
+  const params = new URLSearchParams({ fixtureId, seq });
+  if (statKeys) {
+    params.set("statKeys", statKeys);
+  } else {
+    params.set("statKey", statKey);
+  }
+
+  return txLineFetch(config, `/scores/stat-validation?${params.toString()}`);
 }
 
 export function sendJson(response, statusCode, payload) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getServerConfig, readinessPayload } from "./_txline.js";
+import { fetchScoreValidation, getServerConfig, readinessPayload } from "./_txline.js";
 
 test("server config reports missing TxLINE secrets without exposing values", () => {
   const previousJwt = process.env.TXLINE_JWT;
@@ -28,10 +28,42 @@ test("server config uses documented TxLINE hosts by network", () => {
   assert.equal(getServerConfig().apiBaseUrl, "https://txline.txodds.com/api");
 
   process.env.TXLINE_NETWORK = "devnet";
-  assert.equal(getServerConfig().apiBaseUrl, "https://txline-dev.txodds.com/api");
+  const devnetConfig = getServerConfig();
+  assert.equal(devnetConfig.apiBaseUrl, "https://txline-dev.txodds.com/api");
+  assert.equal(devnetConfig.rpcUrl, "https://api.devnet.solana.com");
+  assert.equal(devnetConfig.txlTokenMint, "4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG");
+  assert.equal(devnetConfig.programId, "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J");
 
   restoreEnv("TXLINE_NETWORK", previousNetwork);
   restoreEnv("TXLINE_ORIGIN", previousOrigin);
+});
+
+test("readiness exposes devnet metadata without exposing secrets", () => {
+  const previousNetwork = process.env.TXLINE_NETWORK;
+  process.env.TXLINE_NETWORK = "devnet";
+
+  const readiness = readinessPayload();
+
+  assert.equal(readiness.network, "devnet");
+  assert.equal(readiness.apiBaseUrl, "https://txline-dev.txodds.com/api");
+  assert.equal(readiness.rpcUrl, "https://api.devnet.solana.com");
+  assert.equal(readiness.txlTokenMint, "4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG");
+  assert.equal("guestJwt" in readiness, false);
+  assert.equal("apiToken" in readiness, false);
+
+  restoreEnv("TXLINE_NETWORK", previousNetwork);
+});
+
+test("score validation requires fixture, sequence, and stat keys", async () => {
+  await assert.rejects(
+    () => fetchScoreValidation({ fixtureId: "18175981", seq: "991" }),
+    /statKey or statKeys is required/,
+  );
+
+  await assert.rejects(
+    () => fetchScoreValidation({ seq: "991", statKeys: "1,2" }),
+    /fixtureId is required/,
+  );
 });
 
 function restoreEnv(key, value) {
