@@ -428,13 +428,13 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="phone-frame" aria-label="MinuteStriker mobile app">
+      <section className="phone-frame" aria-label="mineetes mobile app">
         <div className="phone-screen">
           <header className="match-hero">
             <nav className="topbar" aria-label="Match controls">
               <div className="brand">
                 <span className="logo-mark">M</span>
-                <span>MinuteStriker</span>
+                <span>mineetes</span>
               </div>
               <div className={match.connected ? "live-pill" : "live-pill demo"}>
                 {match.connected ? <Wifi size={14} /> : <WifiOff size={14} />}
@@ -615,7 +615,7 @@ function App() {
           </div>
           <h2>Sixty seconds. One prediction. Instant football sweat.</h2>
           <p>
-            MinuteStriker transforms every match minute into a rapid-fire predictive arcade
+            mineetes transforms every match minute into a rapid-fire predictive arcade
             loop built around TxLINE match events and low-stakes USDC gameplay.
           </p>
         </section>

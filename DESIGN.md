@@ -1,7 +1,7 @@
-# MinuteStriker Design System
+# mineetes Design System
 
 ## Product Feel
-MinuteStriker is a mobile-first live football arcade. The first thing users should notice is the current minute prediction card, then the lock timer, then settlement/proof context.
+mineetes is a mobile-first live football arcade. The first thing users should notice is the current minute prediction card, then the lock timer, then settlement/proof context.
 
 ## Visual Tokens
 - Canvas: deep carbon `#121214`
