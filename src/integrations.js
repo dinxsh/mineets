@@ -4,8 +4,6 @@ const TXLINE_ORIGIN = stripTrailingSlash(
   env.VITE_TXLINE_ORIGIN ||
     (TXLINE_NETWORK === "devnet" ? "https://txline-dev.txodds.com" : "https://txline.txodds.com"),
 );
-const TXLINE_JWT = env.VITE_TXLINE_JWT;
-const TXLINE_API_TOKEN = env.VITE_TXLINE_API_TOKEN;
 const TXLINE_FIXTURE_ID = env.VITE_TXLINE_FIXTURE_ID;
 const TXLINE_SERVICE_LEVEL = env.VITE_TXLINE_SERVICE_LEVEL || "12";
 const WORLDCUP_API_KEY = env.VITE_WORLDCUP_API_KEY;
@@ -58,22 +56,16 @@ export const initialMatchSnapshot = {
 };
 
 export function txLineConfigured() {
-  return Boolean(
-    TXLINE_JWT &&
-      TXLINE_API_TOKEN &&
-      !TXLINE_JWT.startsWith("replace_with") &&
-      !TXLINE_API_TOKEN.startsWith("replace_with"),
-  );
+  return false;
 }
 
 export async function fetchFixtures() {
-  if (!txLineConfigured()) {
+  try {
+    const payload = await fetchJson("/api/fixtures");
+    return payload.fixtures?.length ? payload.fixtures : [];
+  } catch {
     return [snapshotToFixture(initialMatchSnapshot)];
   }
-
-  const payload = await txLineFetch("/fixtures/snapshot");
-  const fixtures = listFrom(payload).map(normalizeFixture).filter(Boolean);
-  return fixtures.length ? fixtures : [];
 }
 
 export function buildActivationMessage({ txSig, jwt, leagues = [] }) {
@@ -81,31 +73,33 @@ export function buildActivationMessage({ txSig, jwt, leagues = [] }) {
 }
 
 export function getTxLineReadiness() {
-  const hasGuestJwt = Boolean(TXLINE_JWT && !TXLINE_JWT.startsWith("replace_with"));
-  const hasApiToken = Boolean(TXLINE_API_TOKEN && !TXLINE_API_TOKEN.startsWith("replace_with"));
-
   return {
     ...txLineNetworkConfig,
-    configured: hasGuestJwt && hasApiToken,
-    hasGuestJwt,
-    hasApiToken,
-    missing: [
-      !hasGuestJwt ? "guest JWT" : null,
-      !hasApiToken ? "activated API token" : null,
-    ].filter(Boolean),
+    configured: false,
+    hasGuestJwt: false,
+    hasApiToken: false,
+    missing: ["guest JWT", "activated API token"],
   };
+}
+
+export async function fetchTxLineReadiness() {
+  try {
+    return await fetchJson("/api/readiness");
+  } catch {
+    return getTxLineReadiness();
+  }
 }
 
 export async function fetchLiveMatchSnapshot({ fixtureId, previous = initialMatchSnapshot } = {}) {
   const activeFixtureId = fixtureId || TXLINE_FIXTURE_ID || previous.fixtureId;
 
-  if (txLineConfigured() && activeFixtureId && activeFixtureId !== "demo-fixture") {
-    const [snapshotPayload, updatesPayload] = await Promise.all([
-      txLineFetch(`/scores/snapshot/${encodeURIComponent(activeFixtureId)}`),
-      txLineFetch(`/scores/updates/${encodeURIComponent(activeFixtureId)}`).catch(() => null),
-    ]);
-
-    return normalizeTxLine(snapshotPayload, updatesPayload, previous, activeFixtureId);
+  if (activeFixtureId && activeFixtureId !== "demo-fixture") {
+    try {
+      const payload = await fetchJson(`/api/live?fixtureId=${encodeURIComponent(activeFixtureId)}`);
+      return payload.snapshot;
+    } catch {
+      // Local Vite dev and missing backend envs should keep the arcade demo usable.
+    }
   }
 
   if (WORLDCUP_API_KEY && WORLDCUP_API_KEY !== "replace_with_worldcupapi_key") {
@@ -158,19 +152,15 @@ export function resolvePrediction({ question, pick, stake, snapshot, targetMinut
 }
 
 function txLineFetch(path) {
-  return fetchJson(`${txLineNetworkConfig.apiBaseUrl}${pathWithServiceLevel(path)}`, null, {
-    Authorization: `Bearer ${TXLINE_JWT}`,
-    "X-Api-Token": TXLINE_API_TOKEN,
-    "X-Service-Level": TXLINE_SERVICE_LEVEL,
-  });
+  throw new Error(`Client TxLINE fetch is disabled; use /api${path}`);
 }
 
 export function buildTxLineDataRequest(path) {
   return {
     url: `${txLineNetworkConfig.apiBaseUrl}${pathWithServiceLevel(path)}`,
     headers: {
-      Authorization: `Bearer ${TXLINE_JWT}`,
-      "X-Api-Token": TXLINE_API_TOKEN,
+      Authorization: "Bearer undefined",
+      "X-Api-Token": undefined,
       "X-Service-Level": TXLINE_SERVICE_LEVEL,
     },
   };

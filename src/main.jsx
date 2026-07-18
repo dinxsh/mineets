@@ -22,11 +22,11 @@ import {
   advanceDemoSnapshotMinute,
   fetchFixtures,
   fetchLiveMatchSnapshot,
+  fetchTxLineReadiness,
   getTxLineReadiness,
   initialMatchSnapshot,
   resolvePrediction,
   txLineNetworkConfig,
-  txLineConfigured,
 } from "./integrations";
 import "./styles.css";
 
@@ -106,6 +106,7 @@ function App() {
     label: "Waiting",
     detail: "No feed poll yet",
   });
+  const [readiness, setReadiness] = useState(getTxLineReadiness());
   const [pick, setPick] = useState(null);
   const [lockedWager, setLockedWager] = useState(null);
   const [locked, setLocked] = useState(false);
@@ -133,7 +134,6 @@ function App() {
   const minuteRef = useRef(initialMatchSnapshot.minute);
 
   const question = questions[questionIndex % questions.length];
-  const readiness = getTxLineReadiness();
   const inActionWindow = second < 30;
   const remaining = inActionWindow ? 30 - second : 60 - second;
   const progress = Math.min(100, (second / 60) * 100);
@@ -246,7 +246,7 @@ function App() {
             tone: "idle",
             icon: "-",
             title: "Minute skipped",
-        body: "No demo-ledger prediction was locked before the action window closed.",
+            body: "No demo-ledger prediction was locked before the action window closed.",
             payout: "--",
             receipt: resolution.receipt,
           },
@@ -288,14 +288,26 @@ function App() {
   useEffect(() => {
     let alive = true;
 
+    fetchTxLineReadiness().then((nextReadiness) => {
+      if (alive) setReadiness(nextReadiness);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
     fetchFixtures().then((nextFixtures) => {
       if (!alive) return;
       setFixtures(nextFixtures);
       setFixturesLoading(false);
       setFixturesError("");
       setLastPoll({
-        tone: txLineConfigured() ? "ok" : "demo",
-        label: txLineConfigured() ? "Fixtures live" : "Demo fixtures",
+        tone: readiness.configured ? "ok" : "demo",
+        label: readiness.configured ? "Fixtures live" : "Demo fixtures",
         detail: nextFixtures.length ? `${nextFixtures.length} fixture option loaded` : "No fixture rows returned",
       });
       if (!selectedFixtureId && nextFixtures[0]?.fixtureId) {
@@ -472,7 +484,7 @@ function App() {
               </button>
 
               <label className="fixture-picker">
-                <span>{fixturesLoading ? "Loading matches" : txLineConfigured() ? "TxLINE fixture" : "Demo fixture"}</span>
+                <span>{fixturesLoading ? "Loading matches" : readiness.configured ? "TxLINE fixture" : "Demo fixture"}</span>
                 <select
                   aria-label="Select match fixture"
                   disabled={fixturesLoading || fixtures.length === 0}
@@ -504,7 +516,7 @@ function App() {
                 <StatusChip label="Level" value={readiness.serviceLevel} tone="ok" />
                 <StatusChip label="JWT" value={readiness.hasGuestJwt ? "Present" : "Missing"} tone={readiness.hasGuestJwt ? "ok" : "warn"} />
                 <StatusChip label="Token" value={readiness.hasApiToken ? "Present" : "Missing"} tone={readiness.hasApiToken ? "ok" : "warn"} />
-                <StatusChip label="Fixture" value={txLineConfigured() ? "TxLINE" : "Demo"} tone={txLineConfigured() ? "ok" : "demo"} />
+                <StatusChip label="Fixture" value={readiness.configured ? "TxLINE" : "Demo"} tone={readiness.configured ? "ok" : "demo"} />
                 <StatusChip label="Last Poll" value={lastPoll.label} tone={lastPoll.tone} />
               </div>
               {fixturesError || liveError ? (
