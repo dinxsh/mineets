@@ -418,21 +418,21 @@ function App() {
     () => [
       {
         icon: <Clock3 size={18} />,
-        label: "Action Window",
+        label: "Market Open",
         value: "00s-30s",
-        body: "Context-aware prediction and USDC stake lock.",
+        body: "One-minute binary market with explicit stake lock.",
       },
       {
         icon: <Gauge size={18} />,
-        label: "Sweat Window",
+        label: "Market Frozen",
         value: "30s-60s",
-        body: "Pool freezes while telemetry keeps updating live.",
+        body: "Pool freezes while TxLINE telemetry keeps updating.",
       },
       {
         icon: <ShieldCheck size={18} />,
         label: "Settlement",
         value: "Instant",
-        body: "Rule-based receipt resolves the minute before the next card.",
+        body: "Rule-based receipt resolves from score events and proof routes.",
       },
     ],
     [],
@@ -625,10 +625,10 @@ function App() {
             <Flame size={16} />
             World Cup live companion
           </div>
-          <h2>Sixty seconds. One prediction. Instant football sweat.</h2>
+          <h2>Prediction markets that settle every minute.</h2>
           <p>
             mineetes transforms every match minute into a rapid-fire predictive arcade
-            loop built around TxLINE match events and low-stakes USDC gameplay.
+            loop built around TxLINE match events, settlement receipts, and score validation.
           </p>
         </section>
 
@@ -660,20 +660,20 @@ function App() {
         </section>
 
         <section className="architecture-panel">
-          <h2>Hackathon Scope</h2>
+          <h2>Prediction Markets Track</h2>
           <div className="rail-item">
             <BadgeDollarSign size={18} />
-            <span>Wallet identity plus demo-ledger stake flow</span>
+            <span>Binary micro-markets with stake lock and payout ledger</span>
           </div>
           <div className="rail-item">
             <Zap size={18} />
             <span>
-              TxLINE {txLineNetworkConfig.network} service level {txLineNetworkConfig.serviceLevel}
+              TxLINE {txLineNetworkConfig.network} service level {txLineNetworkConfig.serviceLevel} data backend
             </span>
           </div>
           <div className="rail-item">
             <Trophy size={18} />
-            <span>Guest JWT plus activated API token feed access</span>
+            <span>Score validation proxy for on-chain proof integration</span>
           </div>
         </section>
       </aside>
