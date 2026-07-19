@@ -4,8 +4,12 @@ import fixturesHandler from "./api/fixtures.js";
 import liveHandler from "./api/live.js";
 import readinessHandler from "./api/readiness.js";
 import scoreValidationHandler from "./api/score-validation.js";
+import activateHandler from "./api/activate.js";
+import activationMessageHandler from "./api/activation-message.js";
 
 const apiHandlers = {
+  "/api/activate": activateHandler,
+  "/api/activation-message": activationMessageHandler,
   "/api/fixtures": fixturesHandler,
   "/api/live": liveHandler,
   "/api/readiness": readinessHandler,

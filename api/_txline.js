@@ -112,6 +112,79 @@ export function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+export async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw.trim()) return {};
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw httpError(400, "Request body must be valid JSON", true);
+  }
+}
+
+export function activationMessage({ txSig, leagues = [] }) {
+  const config = getServerConfig();
+  if (!config.hasGuestJwt) {
+    throw httpError(503, "Missing backend env: TXLINE_JWT", true);
+  }
+
+  const safeTxSig = String(txSig || "").trim();
+  if (!safeTxSig) {
+    throw httpError(400, "txSig is required", true);
+  }
+
+  return `${safeTxSig}:${normaliseLeagues(leagues).join(",")}:${config.guestJwt}`;
+}
+
+export async function activateApiToken({ txSig, walletSignature, leagues = [] }) {
+  const config = getServerConfig();
+  if (!config.hasGuestJwt) {
+    throw httpError(503, "Missing backend env: TXLINE_JWT", true);
+  }
+
+  if (!String(txSig || "").trim()) {
+    throw httpError(400, "txSig is required", true);
+  }
+
+  if (!String(walletSignature || "").trim()) {
+    throw httpError(400, "walletSignature is required", true);
+  }
+
+  const response = await fetch(`${config.apiBaseUrl}/token/activate`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.guestJwt}`,
+    },
+    body: JSON.stringify({
+      txSig,
+      walletSignature,
+      leagues: normaliseLeagues(leagues),
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw httpError(
+      response.status,
+      payload?.message || payload?.error?.message || `TxLINE activation returned ${response.status}`,
+      true,
+    );
+  }
+
+  const token = payload?.token || payload?.data?.token || payload?.data || payload;
+  if (!token || typeof token !== "string") {
+    throw httpError(502, "TxLINE activation did not return an API token", true);
+  }
+
+  process.env.TXLINE_API_TOKEN = token;
+  return token;
+}
+
 export function handleApiError(response, error) {
   const statusCode = error.statusCode || 500;
   sendJson(response, statusCode, {
@@ -165,6 +238,12 @@ function listFrom(value) {
   if (Array.isArray(value.fixtures)) return value.fixtures;
   if (Array.isArray(value.matches)) return value.matches;
   return [value];
+}
+
+function normaliseLeagues(leagues) {
+  if (Array.isArray(leagues)) return leagues.map(String).filter(Boolean);
+  if (!leagues) return [];
+  return String(leagues).split(",").map((league) => league.trim()).filter(Boolean);
 }
 
 function httpError(statusCode, message, expose = statusCode < 500) {

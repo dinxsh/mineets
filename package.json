@@ -11,12 +11,16 @@
     "txline:setup": "node scripts/txline-worldcup-setup.mjs"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.12",
+    "@solana/web3.js": "^1.95.5",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7",
-    "typescript": "^5.7.2",
+    "buffer": "^6.0.3",
+    "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.468.0"
-  },
-  "devDependencies": {}
+    "tweetnacl": "^1.0.3",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
 }

@@ -26,6 +26,7 @@ import {
   resolvePrediction,
   txLineNetworkConfig,
 } from "./integrations";
+import { subscribeAndActivateWorldCup } from "./txline/subscribe";
 import "./styles.css";
 
 const questions = [
@@ -102,7 +103,9 @@ function App() {
   const [stake, setStake] = useState(1);
   const [balance, setBalance] = useState(42.5);
   const [wallet, setWallet] = useState(null);
+  const [walletProvider, setWalletProvider] = useState(null);
   const [walletName, setWalletName] = useState("");
+  const [activatingTxLine, setActivatingTxLine] = useState(false);
   const [walletChooserOpen, setWalletChooserOpen] = useState(false);
   const [match, setMatch] = useState(initialMatchSnapshot);
   const [fixtures, setFixtures] = useState([]);
@@ -182,11 +185,33 @@ function App() {
     try {
       const response = await provider.connect();
       setWallet(response.publicKey.toString());
+      provider.publicKey = response.publicKey;
+      setWalletProvider(provider);
       setWalletName(option.name);
       setWalletChooserOpen(false);
       showToast(`${option.name} connected`);
     } catch {
       showToast("Wallet connection cancelled");
+    }
+  };
+
+  const activateTxLine = async () => {
+    if (!walletProvider || !wallet) {
+      showToast("Choose a Solana wallet first");
+      return;
+    }
+
+    setActivatingTxLine(true);
+    try {
+      const result = await subscribeAndActivateWorldCup({ provider: walletProvider, readiness });
+      const nextReadiness = result.activation?.readiness || await fetchTxLineReadiness();
+      setReadiness(nextReadiness);
+      setLiveError("");
+      showToast("TxLINE World Cup feed activated");
+    } catch (error) {
+      showToast(error.message || "TxLINE activation failed");
+    } finally {
+      setActivatingTxLine(false);
     }
   };
 
@@ -514,9 +539,15 @@ function App() {
               </p>
               <p className="session-note secondary">
                 {wallet
-                  ? "Wallet connected for identity."
+                  ? readiness.configured ? "Wallet connected for live play." : "Wallet ready for TxLINE activation."
                   : "Choose a Solana wallet to continue."}
               </p>
+              {wallet && !readiness.configured ? (
+                <button className="activate-button" disabled={activatingTxLine} onClick={activateTxLine} type="button">
+                  <ShieldCheck size={17} />
+                  {activatingTxLine ? "Activating TxLINE" : "Activate TxLINE"}
+                </button>
+              ) : null}
               {walletChooserOpen ? (
                 <div className="wallet-chooser" aria-label="Choose Solana wallet">
                   <strong>Choose Solana wallet</strong>

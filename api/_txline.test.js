@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fetchScoreValidation, getServerConfig, readinessPayload } from "./_txline.js";
+import { activationMessage, fetchScoreValidation, getServerConfig, readinessPayload } from "./_txline.js";
 
 test("server config reports missing TxLINE secrets without exposing values", () => {
   const previousJwt = process.env.TXLINE_JWT;
@@ -64,6 +64,18 @@ test("score validation requires fixture, sequence, and stat keys", async () => {
     () => fetchScoreValidation({ seq: "991", statKeys: "1,2" }),
     /fixtureId is required/,
   );
+});
+
+test("server builds TxLINE activation message from the local guest JWT", () => {
+  const previousJwt = process.env.TXLINE_JWT;
+  process.env.TXLINE_JWT = "guest.jwt";
+
+  assert.equal(
+    activationMessage({ txSig: "abc123", leagues: [] }),
+    "abc123::guest.jwt",
+  );
+
+  restoreEnv("TXLINE_JWT", previousJwt);
 });
 
 function restoreEnv(key, value) {

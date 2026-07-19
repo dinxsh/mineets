@@ -372,6 +372,35 @@ button:disabled {
   box-shadow: 5px 5px 0 #050507;
 }
 
+.activate-button {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #050507;
+  background: var(--lime);
+  border: 3px solid #050507;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 #050507;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.activate-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 #050507;
+}
+
+.activate-button:disabled {
+  filter: grayscale(0.45);
+  opacity: 0.72;
+  transform: none;
+}
+
 .wallet-chooser {
   grid-column: 1 / -1;
   display: grid;
