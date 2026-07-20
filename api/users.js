@@ -3,6 +3,7 @@ import path from "node:path";
 import { readJsonBody, sendJson } from "./_bento.js";
 
 const USERS_FILE = path.join(process.cwd(), "data", "users.json");
+const IS_VERCEL = process.env.VERCEL === "1";
 
 const SEEDED_USERS = [
   { id: "captain-aya", name: "Captain Aya", team: "Argentina", style: "Striker", wins: 18, losses: 4, points: 2840, streak: 9 },
@@ -10,6 +11,7 @@ const SEEDED_USERS = [
   { id: "last-minute", name: "Last Minute", team: "Brazil", style: "Chaos", wins: 13, losses: 6, points: 2195, streak: 5 },
   { id: "clean-sheet", name: "Clean Sheet", team: "Japan", style: "Defense", wins: 11, losses: 7, points: 1880, streak: 4 },
 ];
+let vercelUsersCache = null;
 
 export default async function handler(request, response) {
   try {
@@ -60,6 +62,13 @@ export default async function handler(request, response) {
 }
 
 export async function readUsers() {
+  if (IS_VERCEL) {
+    if (!vercelUsersCache) {
+      vercelUsersCache = await readBundledUsers();
+    }
+    return vercelUsersCache;
+  }
+
   await ensureUsersFile();
   const raw = await fs.readFile(USERS_FILE, "utf8");
   const parsed = JSON.parse(raw);
@@ -67,8 +76,27 @@ export async function readUsers() {
 }
 
 async function writeUsers(users) {
+  if (IS_VERCEL) {
+    vercelUsersCache = users.map(normalizeUser);
+    return;
+  }
+
   await fs.mkdir(path.dirname(USERS_FILE), { recursive: true });
   await fs.writeFile(USERS_FILE, `${JSON.stringify({ users: users.map(normalizeUser) }, null, 2)}\n`);
+}
+
+async function readBundledUsers() {
+  try {
+    const raw = await fs.readFile(USERS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.users) && parsed.users.length) {
+      return parsed.users.map(normalizeUser).filter((user) => user.id && user.name);
+    }
+  } catch {
+    // Vercel deployments may not include a writable local data file. Use seeded users.
+  }
+
+  return SEEDED_USERS;
 }
 
 async function ensureUsersFile() {
