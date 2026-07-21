@@ -4,12 +4,7 @@ import path from "node:path";
 const USERS_FILE = path.join(process.cwd(), "data", "users.json");
 const IS_VERCEL = process.env.VERCEL === "1";
 
-const SEEDED_USERS = [
-  { id: "captain-aya", name: "Captain Aya", team: "Argentina", style: "Striker", wins: 18, losses: 4, points: 2840, streak: 9 },
-  { id: "press-master", name: "Press Master", team: "France", style: "Midfield", wins: 15, losses: 5, points: 2410, streak: 6 },
-  { id: "last-minute", name: "Last Minute", team: "Brazil", style: "Chaos", wins: 13, losses: 6, points: 2195, streak: 5 },
-  { id: "clean-sheet", name: "Clean Sheet", team: "Japan", style: "Defense", wins: 11, losses: 7, points: 1880, streak: 4 },
-];
+const SEEDED_USERS = [];
 let vercelUsersCache = null;
 
 export default async function handler(request, response) {
@@ -27,13 +22,14 @@ export default async function handler(request, response) {
       }
 
       const users = await readUsers();
-      const existingIndex = users.findIndex((item) => item.id === user.id);
+      const existingIndex = users.findIndex((item) => identityKey(item) === identityKey(user) || item.id === user.id);
       const nextUsers = existingIndex >= 0
         ? users.map((item, index) => index === existingIndex ? { ...item, ...user } : item)
         : [...users, user];
 
-      await writeUsers(nextUsers);
-      sendJson(response, 200, { user, users: nextUsers });
+      const dedupedUsers = dedupeUsers(nextUsers);
+      await writeUsers(dedupedUsers);
+      sendJson(response, 200, { user, users: dedupedUsers });
       return;
     }
 
@@ -71,7 +67,7 @@ export async function readUsers() {
   await ensureUsersFile();
   const raw = await fs.readFile(USERS_FILE, "utf8");
   const parsed = JSON.parse(raw);
-  return Array.isArray(parsed.users) ? parsed.users.map(normalizeUser).filter((user) => user.id && user.name) : SEEDED_USERS;
+  return Array.isArray(parsed.users) ? dedupeUsers(parsed.users.map(normalizeUser).filter((user) => user.id && user.name)) : SEEDED_USERS;
 }
 
 async function writeUsers(users) {
@@ -112,8 +108,13 @@ function normalizeUser(value = {}) {
   return {
     id: String(value.id || slugFrom(value.name) || `user-${Date.now()}`),
     name: String(value.name || "").trim(),
+    username: usernameFrom(value.username || value.name),
     team: String(value.team || "USA"),
     style: String(value.style || "Striker"),
+    twitter: String(value.twitter || ""),
+    discord: String(value.discord || ""),
+    walletId: String(value.walletId || value.wallet || value.address || ""),
+    managedAccount: String(value.managedAccount || ""),
     wins,
     losses,
     points: numberFrom(value.points, 1200 + wins * 80 - losses * 20),
@@ -139,6 +140,33 @@ function lossesFromRecord(record) {
 function numberFrom(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function usernameFrom(value) {
+  return String(value || "player")
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9_]+/g, "")
+    .slice(0, 18) || "player";
+}
+
+function identityKey(user) {
+  if (user.walletId) return `wallet:${String(user.walletId).toLowerCase()}`;
+  if (user.username) return `username:${String(user.username).toLowerCase()}`;
+  return `name:${String(user.name || "").toLowerCase()}:team:${String(user.team || "").toLowerCase()}`;
+}
+
+function dedupeUsers(users) {
+  const byIdentity = new Map();
+  for (const raw of users || []) {
+    const user = normalizeUser(raw);
+    const key = identityKey(user);
+    const existing = byIdentity.get(key);
+    if (!existing || user.points > existing.points || user.wins > existing.wins) {
+      byIdentity.set(key, { ...existing, ...user });
+    }
+  }
+  return [...byIdentity.values()];
 }
 
 function slugFrom(value) {

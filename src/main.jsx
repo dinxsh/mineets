@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  ArrowLeft,
   BadgeDollarSign,
+  Bell,
   Check,
   ChevronDown,
   Clock3,
@@ -17,8 +19,6 @@ import {
   UserCircle,
   UserPlus,
   Wallet,
-  Wifi,
-  WifiOff,
   X,
   Zap,
 } from "lucide-react";
@@ -44,15 +44,37 @@ import {
 import "./styles.css";
 
 const formatMoney = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "0.00");
-const DEFAULT_PROFILES = [
-  { id: "captain-aya", name: "Captain Aya", team: "Argentina", style: "Striker", wins: 18, losses: 4, points: 2840, streak: 9 },
-  { id: "press-master", name: "Press Master", team: "France", style: "Midfield", wins: 15, losses: 5, points: 2410, streak: 6 },
-  { id: "last-minute", name: "Last Minute", team: "Brazil", style: "Chaos", wins: 13, losses: 6, points: 2195, streak: 5 },
-  { id: "clean-sheet", name: "Clean Sheet", team: "Japan", style: "Defense", wins: 11, losses: 7, points: 1880, streak: 4 },
-];
+const DEFAULT_PROFILES = [];
 const PROFILE_STORAGE_KEY = "haramball-world-cup-profiles";
 const ACTIVE_PROFILE_STORAGE_KEY = "haramball-active-profile-id";
+const ACTIVITY_STORAGE_KEY = "haramball-activity-feed";
 const THEME_STORAGE_KEY = "haramball-theme";
+const TOURNAMENT_STORAGE_KEY = "haramball-tournaments";
+const CURRENT_TOURNAMENT_STORAGE_KEY = "haramball-current-tournament-id";
+const ROUND_SECONDS = 15;
+const LOCKOUT_SECONDS = Math.ceil(ROUND_SECONDS * 0.15);
+const TOKEN_OPTIONS = [
+  { symbol: "USDC", name: "USD Coin", network: "Base", icon: "$" },
+  { symbol: "USDT", name: "Tether USD", network: "Ethereum", icon: "T" },
+  { symbol: "ETH", name: "Ether", network: "Ethereum", icon: "E" },
+  { symbol: "SOL", name: "Solana", network: "Solana", icon: "S" },
+  { symbol: "BTC", name: "Bitcoin", network: "Bitcoin", icon: "B" },
+];
+const TEAM_FLAGS = {
+  Argentina: "\u{1F1E6}\u{1F1F7}",
+  Brazil: "\u{1F1E7}\u{1F1F7}",
+  England: "\u{1F3F4}",
+  France: "\u{1F1EB}\u{1F1F7}",
+  Germany: "\u{1F1E9}\u{1F1EA}",
+  Japan: "\u{1F1EF}\u{1F1F5}",
+  Morocco: "\u{1F1F2}\u{1F1E6}",
+  USA: "\u{1F1FA}\u{1F1F8}",
+};
+const DEFAULT_TOURNAMENTS = [
+  { id: "premier-weekend", name: "Premier Weekend", host: "Haramball", visibility: "public", players: 128, inviteCode: "PREM15" },
+  { id: "underdog-cup", name: "Underdog Cup", host: "Community", visibility: "public", players: 64, inviteCode: "DOGS" },
+  { id: "friends-table", name: "Friends Table", host: "Invite only", visibility: "private", players: 12, inviteCode: "MATES" },
+];
 
 function App() {
   const [readiness, setReadiness] = useState(initialBentoReadiness);
@@ -67,26 +89,42 @@ function App() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [linkLoading, setLinkLoading] = useState(false);
   const [walletOptions, setWalletOptions] = useState([]);
+  const [walletOptionsLoading, setWalletOptionsLoading] = useState(true);
   const [stake, setStake] = useState("1");
+  const [stakeCurrency, setStakeCurrency] = useState("USDC");
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState("USDC");
+  const [tokenSearch, setTokenSearch] = useState("");
   const [pick, setPick] = useState(null);
   const [estimate, setEstimate] = useState(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [portfolio, setPortfolio] = useState(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
   const [profiles, setProfiles] = useState(loadProfiles);
+  const [profilesLoading, setProfilesLoading] = useState(true);
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || "");
-  const [profileDraft, setProfileDraft] = useState({ name: "", team: "USA", style: "Striker" });
+  const [profileDraft, setProfileDraft] = useState({ name: "", username: "", team: "USA", style: "Striker", twitter: "", discord: "" });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [profileModalOpen, setProfileModalOpen] = useState(() => !localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY));
+  const [tournamentModalOpen, setTournamentModalOpen] = useState(false);
+  const [tournamentView, setTournamentView] = useState("public");
+  const [tournaments, setTournaments] = useState(loadTournaments);
+  const [currentTournamentId, setCurrentTournamentId] = useState(() => localStorage.getItem(CURRENT_TOURNAMENT_STORAGE_KEY) || DEFAULT_TOURNAMENTS[0].id);
+  const [tournamentDraft, setTournamentDraft] = useState({ name: "", visibility: "public", inviteCode: "" });
+  const [inviteCode, setInviteCode] = useState("");
   const [profileMode, setProfileMode] = useState("onboarding");
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || "classic");
   const [toast, setToast] = useState("");
-  const [feed, setFeed] = useState([]);
+  const [feed, setFeed] = useState(loadActivityFeed);
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => Math.floor(Date.now() / 1000) % ROUND_SECONDS);
   const [settlement, setSettlement] = useState({
     tone: "idle",
     icon: "?",
-    title: "Choose a World Cup market",
-    body: "Pick a side, preview your ticket, then lock it before kickoff energy moves on.",
+    title: "Ready for your pick",
+    body: "Pick a side to preview the ticket before locking it.",
     payout: "--",
     receipt: null,
   });
@@ -94,31 +132,69 @@ function App() {
 
   const market = markets[marketIndex] || null;
   const amountWei = useMemo(() => humanToWei(stake), [stake]);
-  const ready = readiness.configured && markets.length > 0;
   const authed = Boolean(token && authMode === "wallet");
   const optionLabel = pick === 0 ? market?.optionA : pick === 1 ? market?.optionB : "";
-  const marketTitle = marketsLoading
-    ? "Loading World Cup markets..."
-    : market?.title || (readiness.configured ? "No match markets returned" : "Market board needs setup");
+  const secondsRemaining = Math.max(0, ROUND_SECONDS - elapsedSeconds);
+  const lockoutActive = secondsRemaining <= LOCKOUT_SECONDS;
+  const progressPercent = Math.min(100, Math.max(0, (elapsedSeconds / ROUND_SECONDS) * 100));
+  const marketTitle = market?.title || (readiness.configured ? "No match markets returned" : "Market board needs setup");
   const marketBody = market
-    ? "Preview your ticket before locking it. Your account refreshes after the pick is accepted."
+    ? "Preview your ticket, then lock it in."
     : readiness.configured
       ? "Try again when the live market board is available."
-      : "Add the server market key, then restart the app to load live World Cup markets.";
+      : "Add the server market key, then restart the app to load live match markets.";
+  const fixture = useMemo(() => fixtureFromMarket(market), [market]);
+  const leagueName = leagueFromMarket(market);
+  const currentTournament = tournaments.find((item) => item.id === currentTournamentId) || tournaments[0] || DEFAULT_TOURNAMENTS[0];
+  const selectedToken = TOKEN_OPTIONS.find((item) => item.symbol === stakeCurrency) || TOKEN_OPTIONS[0];
   const leaderboard = useMemo(
-    () => [...profiles].sort((a, b) => b.wins - a.wins || b.points - a.points).slice(0, 8),
+    () => dedupeProfiles(profiles).sort((a, b) => b.wins - a.wins || a.losses - b.losses).slice(0, 5),
     [profiles],
   );
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  const profileRouteUsername = usernameFromProfilePath();
+  const routeProfile = profileRouteUsername
+    ? dedupeProfiles(profiles).find((profile) => usernameFrom(profile.username || profile.name) === profileRouteUsername)
+    : null;
   const showToast = (message) => {
     setToast(message);
     window.clearTimeout(showToast.timer);
     showToast.timer = window.setTimeout(() => setToast(""), 1800);
   };
+  const notifications = useMemo(
+    () => feed.map((item, index) => ({
+      id: `${item.minute}-${item.label}-${index}`,
+      ...item,
+    })),
+    [feed],
+  );
+  const unreadCount = notifications.filter((item) => !readNotificationIds.includes(item.id)).length;
+  const markNotificationsRead = () => {
+    setReadNotificationIds(notifications.map((item) => item.id));
+  };
 
   useEffect(() => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles));
   }, [profiles]);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(feed));
+  }, [feed]);
+
+  useEffect(() => {
+    localStorage.setItem(TOURNAMENT_STORAGE_KEY, JSON.stringify(tournaments));
+  }, [tournaments]);
+
+  useEffect(() => {
+    localStorage.setItem(CURRENT_TOURNAMENT_STORAGE_KEY, currentTournamentId);
+  }, [currentTournamentId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor(Date.now() / 1000) % ROUND_SECONDS);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -128,6 +204,9 @@ function App() {
       })
       .catch(() => {
         if (alive) showToast("Using local leaderboard cache");
+      })
+      .finally(() => {
+        if (alive) setProfilesLoading(false);
       });
     return () => {
       alive = false;
@@ -141,9 +220,13 @@ function App() {
 
   useEffect(() => {
     let alive = true;
-    discoverEvmWalletOptions().then((options) => {
-      if (alive) setWalletOptions(options);
-    });
+    discoverEvmWalletOptions()
+      .then((options) => {
+        if (alive) setWalletOptions(options);
+      })
+      .finally(() => {
+        if (alive) setWalletOptionsLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -193,14 +276,14 @@ function App() {
   useEffect(() => {
     setPick(null);
     setEstimate(null);
-    setSettlement({
-      tone: "idle",
-      icon: "?",
-      title: market ? "Ready for your pick" : "Choose a World Cup market",
-      body: market ? "Select an outcome to preview the ticket before you lock it." : "Live match markets will appear here when the board loads.",
-      payout: "--",
-      receipt: null,
-    });
+      setSettlement({
+        tone: "idle",
+        icon: "?",
+        title: market ? "Ready for your pick" : "Choose a match market",
+        body: market ? "Select an outcome to preview the ticket." : "Live match markets will appear here when the board loads.",
+        payout: "--",
+        receipt: null,
+      });
   }, [market?.duelId]);
 
   useEffect(() => {
@@ -222,7 +305,7 @@ function App() {
         setAuthMode("link");
         setWallet(login.address || "");
         setManagedAccount(login.managedAccount || "");
-        setFeed((items) => [{ minute: "now", label: "Wallet linked. Browser wallet still required for tickets." }, ...items].slice(0, 6));
+        setFeed((items) => [{ minute: timeStamp(), label: "Wallet linked. Browser wallet still required for tickets." }, ...items].slice(0, 6));
         showToast("Wallet linked for profile");
         url.searchParams.delete("code");
         url.searchParams.delete("state");
@@ -253,7 +336,7 @@ function App() {
           address,
           signature,
           timestamp,
-          username: activeProfile?.name || `haramball-${address.slice(2, 8)}`,
+          username: activeProfile?.username || activeProfile?.name || `haramball-${address.slice(2, 8)}`,
         }),
       );
 
@@ -262,7 +345,8 @@ function App() {
       setToken(login.token);
       setAuthMode("wallet");
       setManagedAccount(login.managedAccount || "");
-      setFeed((items) => [{ minute: "now", label: `${walletOption?.name || "Wallet"} connected for matchday markets` }, ...items].slice(0, 6));
+      setProfiles((items) => attachWalletToProfiles(items, activeProfileId, address, login.managedAccount));
+      setFeed((items) => [{ minute: timeStamp(), label: `${walletOption?.name || "Wallet"} connected for matchday markets` }, ...items].slice(0, 6));
       showToast(`${walletOption?.name || "Wallet"} connected`);
     } catch (error) {
       showToast(walletErrorMessage(error));
@@ -289,6 +373,10 @@ function App() {
 
   const quotePick = async (optionIndex) => {
     if (!market) return;
+    if (lockoutActive) {
+      showToast("Market is locked for the final 15%");
+      return;
+    }
     setPick(optionIndex);
     setEstimate(null);
 
@@ -319,8 +407,8 @@ function App() {
         icon: optionIndex === 0 ? "Y" : "N",
         title: `${optionIndex === 0 ? market.optionA : market.optionB} preview ready`,
         body: nextEstimate.sharesOut
-          ? `Estimated ${weiToHuman(nextEstimate.sharesOut)} shares before final confirmation.`
-          : "Ticket preview is ready. Review and lock when you are happy.",
+          ? `${formatMoney(stake)} ${stakeCurrency} for estimated ${weiToHuman(nextEstimate.sharesOut)} shares.`
+          : `${formatMoney(stake)} ${stakeCurrency} ticket preview is ready.`,
         payout: "Preview",
         receipt: null,
       });
@@ -334,6 +422,10 @@ function App() {
   const submitBet = async () => {
     if (!market || pick === null || !estimate) {
       showToast("Preview an outcome first");
+      return;
+    }
+    if (lockoutActive) {
+      showToast("Market is locked for the final 15%");
       return;
     }
 
@@ -358,7 +450,7 @@ function App() {
         duelId: market.duelId,
         market: market.title,
         outcome: optionLabel,
-        stake: `${formatMoney(stake)} USDC`,
+        stake: `${formatMoney(stake)} ${stakeCurrency}`,
         shares: estimate.sharesOut ? weiToHuman(estimate.sharesOut) : "pending",
         quoteId: estimate.quoteId || "sdk",
         idempotencyKey,
@@ -372,7 +464,7 @@ function App() {
         payout: "Pending",
         receipt,
       });
-      setFeed((items) => [{ minute: "now", label: `${optionLabel} ticket locked for market ${market.duelId}` }, ...items].slice(0, 6));
+      setFeed((items) => [{ minute: timeStamp(), label: `${optionLabel} ticket locked for ${fixture.label}` }, ...items].slice(0, 6));
       showToast("Ticket locked");
       reconcilePortfolio(0);
     } catch (error) {
@@ -383,12 +475,15 @@ function App() {
   };
 
   const refreshPortfolio = async () => {
+    setPortfolioLoading(true);
     try {
       const nextPortfolio = await fetchBentoPortfolio({ token, account: managedAccount });
       setPortfolio(nextPortfolio);
       return nextPortfolio;
     } catch {
       return null;
+    } finally {
+      setPortfolioLoading(false);
     }
   };
 
@@ -407,18 +502,17 @@ function App() {
     }, attempt === 0 ? 1200 : 3500);
   };
 
-  const nextMarket = () => {
-    setMarketIndex((value) => (markets.length ? (value + 1) % markets.length : 0));
-  };
-
-  const previousMarket = () => {
-    setMarketIndex((value) => (markets.length ? (value - 1 + markets.length) % markets.length : 0));
-  };
-
   const openProfileModal = (mode) => {
     setProfileMode(mode);
     if (activeProfile) {
-      setProfileDraft({ name: activeProfile.name, team: activeProfile.team, style: activeProfile.style });
+      setProfileDraft({
+        name: activeProfile.name,
+        username: activeProfile.username || "",
+        team: activeProfile.team,
+        style: activeProfile.style,
+        twitter: activeProfile.twitter || "",
+        discord: activeProfile.discord || "",
+      });
     }
     setProfileModalOpen(true);
     setProfileMenuOpen(false);
@@ -427,6 +521,7 @@ function App() {
   const saveProfile = (event) => {
     event.preventDefault();
     const cleanName = profileDraft.name.trim();
+    const cleanUsername = usernameFrom(profileDraft.username || cleanName);
     if (!cleanName) {
       showToast("Add a profile name");
       return;
@@ -434,28 +529,84 @@ function App() {
 
     const existing = profileMode !== "onboarding" && activeProfile;
     const nextProfile = normalizeProfile(existing
-      ? { ...activeProfile, name: cleanName, team: profileDraft.team, style: profileDraft.style }
+      ? { ...activeProfile, name: cleanName, username: cleanUsername, team: profileDraft.team, style: profileDraft.style, twitter: profileDraft.twitter, discord: profileDraft.discord, walletId: wallet || activeProfile.walletId, managedAccount: managedAccount || activeProfile.managedAccount }
       : {
-          id: `${cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
+          id: profileIdFrom({ username: cleanUsername, walletId: wallet, name: cleanName }),
           name: cleanName,
+          username: cleanUsername,
           team: profileDraft.team,
           style: profileDraft.style,
+          twitter: profileDraft.twitter,
+          discord: profileDraft.discord,
+          walletId: wallet,
+          managedAccount,
           wins: 0,
           losses: 0,
-          points: 1200 + Math.floor(Math.random() * 420),
-          streak: 0,
         });
 
-    setProfiles((items) => existing ? items.map((item) => item.id === activeProfile.id ? nextProfile : item) : [...items, nextProfile]);
+    setProfiles((items) => dedupeProfiles(existing ? items.map((item) => item.id === activeProfile.id ? nextProfile : item) : [...items, nextProfile]));
     saveLeaderboardUser(nextProfile)
-      .then((saved) => setProfiles((items) => items.map((item) => item.id === saved.id ? normalizeProfile(saved) : item)))
+      .then((saved) => setProfiles((items) => dedupeProfiles(items.map((item) => item.id === saved.id ? normalizeProfile(saved) : item))))
       .catch(() => showToast("Profile saved locally only"));
     setActiveProfileId(nextProfile.id);
     localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, nextProfile.id);
-    setProfileDraft({ name: "", team: profileDraft.team, style: profileDraft.style });
+    setProfileDraft({ name: "", username: "", team: profileDraft.team, style: profileDraft.style, twitter: "", discord: "" });
     setProfileModalOpen(false);
-    setFeed((items) => [{ minute: "now", label: existing ? `${cleanName} updated their fan profile` : `${cleanName} joined the leaderboard` }, ...items].slice(0, 6));
+    if (!existing && profileMode === "onboarding") {
+      setTournamentModalOpen(true);
+      setTournamentView("public");
+    }
+    setFeed((items) => [{ minute: timeStamp(), label: existing ? `${cleanName} updated their fan profile` : `${cleanName} joined the leaderboard` }, ...items].slice(0, 6));
     showToast(existing ? "Profile updated" : "Profile created");
+  };
+
+  const joinTournament = (tournament) => {
+    setCurrentTournamentId(tournament.id);
+    showToast(`Joined ${tournament.name}`);
+    setTournamentModalOpen(false);
+  };
+
+  const joinInviteTournament = () => {
+    const code = inviteCode.trim().toUpperCase();
+    const tournament = tournaments.find((item) => item.inviteCode.toUpperCase() === code);
+    if (!tournament) {
+      showToast("Invite code not found");
+      return;
+    }
+    joinTournament(tournament);
+  };
+
+  const createTournament = (event) => {
+    event.preventDefault();
+    const cleanName = tournamentDraft.name.trim();
+    if (!cleanName) {
+      showToast("Add a tournament name");
+      return;
+    }
+    const nextTournament = {
+      id: `${cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
+      name: cleanName,
+      host: activeProfile?.username ? `@${activeProfile.username}` : activeProfile?.name || "You",
+      visibility: tournamentDraft.visibility,
+      players: 1,
+      inviteCode: (tournamentDraft.inviteCode || cleanName.slice(0, 5)).replace(/[^a-z0-9]/gi, "").toUpperCase() || "PLAY",
+    };
+    setTournaments((items) => [nextTournament, ...items]);
+    setCurrentTournamentId(nextTournament.id);
+    setTournamentDraft({ name: "", visibility: "public", inviteCode: "" });
+    setTournamentModalOpen(false);
+    showToast("Tournament created");
+  };
+
+  const openTokenModal = () => {
+    setTokenDraft(stakeCurrency);
+    setTokenSearch("");
+    setTokenModalOpen(true);
+  };
+
+  const confirmToken = () => {
+    setStakeCurrency(tokenDraft);
+    setTokenModalOpen(false);
   };
 
   const statusCards = [
@@ -463,7 +614,7 @@ function App() {
       icon: <Clock3 size={18} />,
       label: "Match Board",
       value: marketsLoading ? "Loading" : `${markets.length} markets`,
-      body: "World Cup markets load before you connect a wallet.",
+      body: "Match markets load before you connect a wallet.",
     },
     {
       icon: <Gauge size={18} />,
@@ -479,26 +630,69 @@ function App() {
     },
   ];
 
+  if (profileRouteUsername) {
+    return (
+      <main className="app-shell profile-route-shell">
+        <section className="phone-frame" aria-label={`haramball.xyz profile ${profileRouteUsername}`}>
+          <div className="phone-screen">
+            <header className="profile-route-hero">
+              <a className="back-link" href="/">haramball.xyz</a>
+              <a className="back-arrow-button" href="/" aria-label="Back to markets">
+                <ArrowLeft size={20} />
+              </a>
+              <h1>@{profileRouteUsername}</h1>
+              <p>Profile, interactions, and market activity.</p>
+            </header>
+            <section className="play-stack">
+              <ProfileActivityCard activeProfile={routeProfile} fallbackToFirst={false} feed={feed} loading={profilesLoading} profiles={leaderboard} />
+              <LeaderboardCard loading={profilesLoading} profiles={leaderboard} />
+            </section>
+          </div>
+        </section>
+        <aside className="desktop-panel">
+          <LeaderboardCard loading={profilesLoading} profiles={leaderboard} wide />
+          <ProfileActivityCard activeProfile={routeProfile} fallbackToFirst={false} feed={feed} loading={profilesLoading} profiles={leaderboard} wide />
+        </aside>
+        <div className={toast ? "toast show" : "toast"}>{toast}</div>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
-      <section className="phone-frame" aria-label="haramball.xyz World Cup app">
+      <section className="phone-frame" aria-label="haramball.xyz markets app">
         <div className="phone-screen">
           <header className="match-hero">
             <nav className="topbar" aria-label="Match controls">
               <div className="brand">
-                <span className="logo-mark" aria-hidden="true">
-                  <span className="logo-mi">hb</span>
-                  <span className="logo-bolt" />
-                </span>
-                <span>haramball.xyz</span>
+                <span className="brand-wordmark">haramball.xyz</span>
               </div>
-              <div className={readiness.configured ? "live-pill" : "live-pill offline"}>
-                {readiness.configured ? <Wifi size={14} /> : <WifiOff size={14} />}
-                {readiness.configured ? "Live board" : "Setup"}
-              </div>
-              <div className="profile-menu-wrap">
+              <div className="topbar-actions">
+                <div className="notification-menu-wrap">
+                  <button className="notification-button" onClick={() => setNotificationsOpen((value) => !value)} type="button" aria-label="Notifications">
+                    <Bell size={18} />
+                    {unreadCount ? <span>{unreadCount}</span> : null}
+                  </button>
+                  {notificationsOpen ? (
+                    <div className="notification-dropdown">
+                      <div className="notification-head">
+                        <strong>Notifications</strong>
+                        <button onClick={markNotificationsRead} type="button">Mark read</button>
+                      </div>
+                      {notifications.length ? notifications.map((item) => (
+                        <div className={readNotificationIds.includes(item.id) ? "notification-row read" : "notification-row"} key={item.id}>
+                          <strong>{item.minute}</strong>
+                          <span>{item.label}</span>
+                        </div>
+                      )) : (
+                        <div className="notification-empty">No notifications yet</div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="profile-menu-wrap">
                 <button className="profile-icon-button" onClick={() => activeProfile ? setProfileMenuOpen((value) => !value) : openProfileModal("onboarding")} type="button">
-                  {activeProfile ? initials(activeProfile.name) : <UserCircle size={20} />}
+                  {activeProfile ? teamFlag(activeProfile.team) : <UserCircle size={20} />}
                 </button>
                 {profileMenuOpen ? (
                   <div className="profile-dropdown">
@@ -520,75 +714,52 @@ function App() {
                     </button>
                   </div>
                 ) : null}
+                </div>
               </div>
             </nav>
 
             <div className="scoreline">
-              <Team name="World" sublabel="Markets" stat={marketsLoading ? "..." : markets.length} />
-              <div className="score">CUP</div>
-              <Team name="Cup" sublabel="Mode" stat="Live" align="right" />
+              {marketsLoading ? (
+                <HeroSkeleton />
+              ) : (
+                <>
+                  <Team name={fixture.home} />
+                  <div className="score">v/s</div>
+                  <Team name={fixture.away} align="right" />
+                </>
+              )}
+            </div>
+            <div className="market-context" aria-label="Market context">
+              <b>{leagueName} - {currentTournament.name}</b>
             </div>
 
-            <div className="ticker">
-              <div className="minute">
-                <strong>{market ? `#${marketIndex + 1}` : "--"}</strong>
-                <span>{market ? market.category : "Matchday market board"}</span>
-              </div>
-              <div className="balance-card">
-                <span>{activeProfile ? activeProfile.team : "Join market"}</span>
-                <strong>{activeProfile ? activeProfile.name : "Create"}</strong>
-              </div>
-            </div>
           </header>
 
           <section className="play-stack">
-            <section className="session-strip" aria-label="Match session setup">
-              <p className="session-note">
-                {readiness.configured
-                  ? "Match board is live and ready."
-                  : `Market board setup needed: ${readiness.missing.join(", ")}.`}
-              </p>
-              <p className="session-note secondary">
-                {wallet
-                  ? `${authMode === "wallet" ? "Trading wallet" : "Linked wallet"} ${shortAddress(wallet)}`
-                  : activeProfile
-                    ? `${activeProfile.name} is ready. Connect wallet when placing a ticket.`
-                    : "Create a fan profile to join the board."}
-              </p>
-              <p className="session-note secondary">
-                {managedAccount
-                  ? `Market account ${shortAddress(managedAccount)}`
-                  : "Your market account appears after wallet login."}
-              </p>
-              {marketError ? <p className="state-note">{marketError}</p> : null}
-            </section>
+            {marketError ? <p className="state-note">{marketError}</p> : null}
 
             <article className="cycle-card is-action">
-              <div className="phase-row">
-                <span>{ready ? "World Cup prediction market" : "Match board pending"}</span>
-                <strong>{market?.status || "idle"}</strong>
-              </div>
-
               <div className="timer-block">
                 <div className="timer-label">
-                  <span>Market ID</span>
-                  <b>{market?.duelId || "--"}</b>
+                  <span>{lockoutActive ? "Market locked" : "Lock closes in"}</span>
+                  <b>{secondsRemaining}s</b>
                 </div>
                 <div className="progress-track">
-                  <span style={{ width: estimate ? "72%" : pick !== null ? "42%" : "18%" }} />
+                  <span className={lockoutActive ? "is-locked" : ""} style={{ width: `${progressPercent}%` }} />
                 </div>
               </div>
 
-              <div className="question-block">
-                <span className="category">{market?.category || "Prediction"}</span>
-                <h1>{marketTitle}</h1>
-                <p>{marketBody}</p>
-              </div>
+              {marketsLoading ? <MarketQuestionSkeleton /> : (
+                <div className="question-block">
+                  <h1>{marketTitle}</h1>
+                  <p>{marketBody}</p>
+                </div>
+              )}
 
               <div className="stake-block">
                 <div className="stake-label">
                   <span>Stake</span>
-                  <strong>{formatMoney(stake)} USDC</strong>
+                  <strong>{formatMoney(stake)} {stakeCurrency}</strong>
                 </div>
                 <label className="stake-input-wrap">
                   <Coins size={16} />
@@ -602,7 +773,10 @@ function App() {
                     type="number"
                     value={stake}
                   />
-                  <span>USDC</span>
+                  <button className="token-select-button" disabled={!market || placing} onClick={openTokenModal} type="button">
+                    <span>{selectedToken.symbol}</span>
+                    <ChevronDown size={14} />
+                  </button>
                 </label>
                 <div className="chip-grid">
                   {["1", "2.5", "5", "10"].map((amount) => (
@@ -621,33 +795,36 @@ function App() {
               </div>
 
               <div className="decision-row">
-                <button className="decision yes" disabled={!market || estimateLoading || placing} onClick={() => quotePick(0)} type="button">
+                <button className="decision yes" disabled={!market || estimateLoading || placing || lockoutActive} onClick={() => quotePick(0)} type="button">
                   <Check size={22} />
-                  {market?.optionA || "YES"}
+                  {marketsLoading ? <SkeletonLine width="58px" /> : market?.optionA || "YES"}
                 </button>
-                <button className="decision no" disabled={!market || estimateLoading || placing} onClick={() => quotePick(1)} type="button">
+                <button className="decision no" disabled={!market || estimateLoading || placing || lockoutActive} onClick={() => quotePick(1)} type="button">
                   <X size={22} />
-                  {market?.optionB || "NO"}
+                  {marketsLoading ? <SkeletonLine width="52px" /> : market?.optionB || "NO"}
                 </button>
               </div>
 
               <div className="market-nav">
-                <button className="chip" disabled={markets.length < 2} onClick={previousMarket} type="button">
-                  Previous
-                </button>
-                <button className="activate-button" disabled={!estimate || placing} onClick={submitBet} type="button">
+                <button className="activate-button" disabled={!estimate || placing || lockoutActive} onClick={submitBet} type="button">
                   <Lock size={17} />
-                  {placing ? "Locking ticket" : "Lock Ticket"}
-                </button>
-                <button className="chip" disabled={markets.length < 2} onClick={nextMarket} type="button">
-                  Next
+                  {placing ? <SkeletonLine width="104px" /> : "Lock Ticket"}
                 </button>
               </div>
             </article>
 
-            <SettlementCard settlement={settlement} />
-            <FeedCard feed={feed} portfolio={portfolio} />
-            <LeaderboardCard profiles={leaderboard} />
+            <SettlementCard
+              estimate={estimate}
+              estimateLoading={estimateLoading}
+              market={market}
+              pick={pick}
+              placing={placing}
+              settlement={settlement}
+              stake={stake}
+              stakeCurrency={stakeCurrency}
+            />
+            <FeedCard feed={feed} loading={portfolioLoading} portfolio={portfolio} />
+            <LeaderboardCard loading={profilesLoading} profiles={leaderboard} />
           </section>
         </div>
       </section>
@@ -656,11 +833,11 @@ function App() {
         <section className="intro-panel">
           <div className="eyebrow">
             <Flame size={16} />
-            World Cup market rush
+            Match market rush
           </div>
           <h2>Pick the moment before the stadium does.</h2>
           <p>
-            haramball.xyz is a fast World Cup market board for quick YES/NO calls, clean tickets, and live account refreshes.
+            haramball.xyz is a fast market board for quick YES/NO calls, clean tickets, and live account refreshes.
           </p>
         </section>
 
@@ -669,7 +846,7 @@ function App() {
             <article className="status-card" key={card.label}>
               <span className="status-icon">{card.icon}</span>
               <small>{card.label}</small>
-              <strong>{card.value}</strong>
+              <strong>{marketsLoading && card.label === "Match Board" ? <SkeletonLine width="78px" /> : card.value}</strong>
               <p>{card.body}</p>
             </article>
           ))}
@@ -691,7 +868,8 @@ function App() {
           </div>
         </section>
 
-        <LeaderboardCard profiles={leaderboard} wide />
+        <LeaderboardCard loading={profilesLoading} profiles={leaderboard} wide />
+        <ProfileActivityCard activeProfile={activeProfile} feed={feed} loading={profilesLoading} profiles={leaderboard} wide />
       </aside>
 
       {profileModalOpen ? (
@@ -709,6 +887,34 @@ function App() {
           wallet={wallet}
           walletLoading={walletLoading}
           walletOptions={walletOptions}
+          walletOptionsLoading={walletOptionsLoading}
+        />
+      ) : null}
+
+      {tokenModalOpen ? (
+        <TokenModal
+          onCancel={() => setTokenModalOpen(false)}
+          onConfirm={confirmToken}
+          search={tokenSearch}
+          selected={tokenDraft}
+          setSearch={setTokenSearch}
+          setSelected={setTokenDraft}
+        />
+      ) : null}
+
+      {tournamentModalOpen ? (
+        <TournamentModal
+          createTournament={createTournament}
+          draft={tournamentDraft}
+          inviteCode={inviteCode}
+          joinInviteTournament={joinInviteTournament}
+          joinTournament={joinTournament}
+          onClose={() => setTournamentModalOpen(false)}
+          setDraft={setTournamentDraft}
+          setInviteCode={setInviteCode}
+          setView={setTournamentView}
+          tournaments={tournaments}
+          view={tournamentView}
         />
       ) : null}
 
@@ -717,25 +923,99 @@ function App() {
   );
 }
 
-function LeaderboardCard({ profiles, wide = false }) {
+function LeaderboardCard({ loading = false, profiles, wide = false }) {
   return (
     <article className={`leaderboard-card ${wide ? "wide" : ""}`}>
       <h2>
         <Trophy size={17} />
-        World Cup Leaderboard
+        Top 5
       </h2>
       <div className="leaderboard-list">
-        {profiles.map((profile, index) => (
-          <div className="leaderboard-row" key={profile.id}>
+        {loading ? (
+          <LeaderboardSkeleton />
+        ) : profiles.length === 0 ? (
+          <div className="leaderboard-empty">No live players yet</div>
+        ) : profiles.map((profile, index) => (
+          <a className="leaderboard-row" href={`/@${profile.username || usernameFrom(profile.name)}`} key={profile.id}>
             <span className={`rank rank-${index + 1}`}>{index < 3 ? <Medal size={15} /> : index + 1}</span>
             <div>
               <strong>{profile.name}</strong>
-              <small>{profile.team} - {profile.style} - {profile.wins}-{profile.losses}</small>
+              <small>@{profile.username || usernameFrom(profile.name)} - {profile.team} - {profile.wins}W / {profile.losses}L</small>
             </div>
-            <b>{profile.wins}W</b>
-          </div>
+            <b>{profile.wins}-{profile.losses}</b>
+          </a>
         ))}
       </div>
+    </article>
+  );
+}
+
+function ProfileActivityCard({ activeProfile, fallbackToFirst = true, feed, loading = false, profiles, wide = false }) {
+  const profile = activeProfile || (fallbackToFirst ? profiles[0] : null) || null;
+  const wins = profile?.wins || 0;
+  const losses = profile?.losses || 0;
+  const total = Math.max(1, wins + losses);
+  const winRate = Math.round((wins / total) * 100);
+  const activity = buildActivityCells(feed);
+  const logItems = feed.slice(0, 5);
+
+  return (
+    <article className={`profile-activity-card ${wide ? "wide" : ""}`}>
+      <h2>
+        <UserCircle size={17} />
+        Profile
+      </h2>
+      {loading ? (
+        <ProfileActivitySkeleton />
+      ) : profile ? (
+        <>
+          <div className="player-profile-panel">
+            <span className="profile-avatar">{profile.name.slice(0, 1).toUpperCase()}</span>
+            <div className="profile-copy">
+              <strong>{profile.name}</strong>
+              <small>@{profile.username || usernameFrom(profile.name)} - {profile.team} - {profile.style}</small>
+            </div>
+            <div className="record-stack" aria-label={`${wins} wins and ${losses} losses`}>
+              <span className="record-pill wins">{wins}W</span>
+              <span className="record-pill losses">{losses}L</span>
+            </div>
+          </div>
+          <div className="profile-metrics">
+            <span>
+              <small>Win rate</small>
+              <b>{winRate}%</b>
+            </span>
+            <span>
+              <small>Wins</small>
+              <b>{wins}</b>
+            </span>
+            <span>
+              <small>Activity</small>
+              <b>{feed.length}</b>
+            </span>
+          </div>
+          <div className="activity-grid" aria-label="Interaction activity">
+            {activity.map((cell, index) => (
+              <span className={`activity-cell level-${cell}`} key={`activity-${index}`} title={`${cell} interactions`} />
+            ))}
+          </div>
+          <div className="activity-log">
+            {logItems.length ? logItems.map((item, index) => (
+              <div className="activity-log-row" key={`${item.minute}-${item.label}-${index}`}>
+                <strong>{item.minute}</strong>
+                <span>{item.label}</span>
+              </div>
+            )) : (
+              <div className="activity-log-row">
+                <strong>{timeStamp()}</strong>
+                <span>No activity yet</span>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="leaderboard-empty">Create a profile to track activity</div>
+      )}
     </article>
   );
 }
@@ -754,6 +1034,7 @@ function OnboardingModal({
   wallet,
   walletLoading,
   walletOptions,
+  walletOptionsLoading,
 }) {
   const isOnboarding = mode === "onboarding";
   const isSettings = mode === "settings";
@@ -769,7 +1050,7 @@ function OnboardingModal({
       <section className="onboarding-modal" role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-hero">
           <div>
-            <span className="category">World Cup</span>
+            <span className="category">Match Markets</span>
             <h2>{title}</h2>
             <p>{body}</p>
           </div>
@@ -782,7 +1063,9 @@ function OnboardingModal({
           <div className="settings-grid">
             <div className="wallet-selector" aria-label="Choose wallet">
               <strong>Choose wallet</strong>
-              {walletOptions.length ? (
+              {walletOptionsLoading ? (
+                <WalletSkeleton />
+              ) : walletOptions.length ? (
                 walletOptions.map((option) => (
                   <button
                     className="wallet-option available"
@@ -792,7 +1075,7 @@ function OnboardingModal({
                     type="button"
                   >
                     <span>{option.name}</span>
-                    <small>{walletLoading ? "Connecting" : option.hint}</small>
+                    <small>{walletLoading ? <SkeletonLine width="62%" small /> : option.hint}</small>
                   </button>
                 ))
               ) : (
@@ -804,7 +1087,7 @@ function OnboardingModal({
             </div>
             <button className="wallet-button alt" onClick={connectWithWalletLink} disabled={linkLoading} type="button">
               <Wallet size={17} />
-              {linkLoading ? "Opening link" : "Open wallet link"}
+              {linkLoading ? <SkeletonLine width="94px" /> : "Open wallet link"}
             </button>
             <div className="settings-note">
               <strong>{activeProfile?.name || "No profile yet"}</strong>
@@ -842,13 +1125,9 @@ function OnboardingModal({
 function ProfileBuilder({ draft, setDraft, onSubmit, activeProfile, submitLabel = "Create Profile", wide = false }) {
   return (
     <article className={`profile-card ${wide ? "wide" : ""}`}>
-      <h2>
-        <UserPlus size={17} />
-        Create Fan Profile
-      </h2>
       {activeProfile ? (
         <div className="profile-preview">
-          <span>{initials(activeProfile.name)}</span>
+          <span>{teamFlag(activeProfile.team)}</span>
           <div>
             <strong>{activeProfile.name}</strong>
             <small>{activeProfile.team} - {activeProfile.style} - {activeProfile.wins} wins</small>
@@ -857,12 +1136,21 @@ function ProfileBuilder({ draft, setDraft, onSubmit, activeProfile, submitLabel 
       ) : null}
       <form className="profile-form" onSubmit={onSubmit}>
         <label>
-          <span>Name</span>
+          <span>Display name</span>
           <input
             maxLength={18}
             onChange={(event) => setDraft((value) => ({ ...value, name: event.target.value }))}
             placeholder="Your matchday name"
             value={draft.name}
+          />
+        </label>
+        <label>
+          <span>Username</span>
+          <input
+            maxLength={18}
+            onChange={(event) => setDraft((value) => ({ ...value, username: event.target.value }))}
+            placeholder="username"
+            value={draft.username}
           />
         </label>
         <label>
@@ -881,6 +1169,27 @@ function ProfileBuilder({ draft, setDraft, onSubmit, activeProfile, submitLabel 
             ))}
           </select>
         </label>
+        <fieldset className="socials-fieldset">
+          <legend>Optional socials</legend>
+          <label>
+            <span>X / Twitter</span>
+            <input
+              maxLength={32}
+              onChange={(event) => setDraft((value) => ({ ...value, twitter: event.target.value }))}
+              placeholder="@handle"
+              value={draft.twitter}
+            />
+          </label>
+          <label>
+            <span>Instagram</span>
+            <input
+              maxLength={32}
+              onChange={(event) => setDraft((value) => ({ ...value, discord: event.target.value }))}
+              placeholder="@handle"
+              value={draft.discord}
+            />
+          </label>
+        </fieldset>
         <button className="activate-button" type="submit">
           <UserPlus size={17} />
           {submitLabel}
@@ -890,29 +1199,71 @@ function ProfileBuilder({ draft, setDraft, onSubmit, activeProfile, submitLabel 
   );
 }
 
-function Team({ name, sublabel, stat, align = "left" }) {
+function Team({ flag, name, sublabel, stat, align = "left" }) {
   return (
     <div className={`team ${align === "right" ? "right" : ""}`}>
+      {flag ? <span className="team-flag" aria-hidden="true">{flag}</span> : null}
       <strong>{name}</strong>
-      <span>
-        {sublabel} <b>{stat}</b>
-      </span>
+      {sublabel ? <span>{sublabel} <b>{stat}</b></span> : null}
     </div>
   );
 }
 
-function SettlementCard({ settlement }) {
+function SettlementCard({ estimate, estimateLoading, market, pick, placing, settlement, stake, stakeCurrency }) {
+  if (estimateLoading || placing) {
+    return (
+      <article className="settlement-card">
+        <h2>Your Ticket</h2>
+        <div className="result">
+          <SkeletonBox className="result-icon" />
+          <div>
+            <SkeletonLine width="68%" />
+            <SkeletonLine width="92%" small />
+          </div>
+          <SkeletonLine width="54px" />
+        </div>
+      </article>
+    );
+  }
+
+  const selectedOutcome = pick === 0 ? market?.optionA : pick === 1 ? market?.optionB : "";
+  const stakeAmount = Number.isFinite(Number(stake)) ? Number(stake) : 0;
+  const estimateAmount = Number(weiToHuman(estimate?.sharesOut || "0"));
+  const winAmount = estimate?.sharesOut && Number.isFinite(estimateAmount) && estimateAmount > 0 ? estimateAmount : stakeAmount;
+  const hasPreview = Boolean(selectedOutcome);
+  const iconClass = hasPreview ? (pick === 0 ? "yes" : "no") : settlement.tone;
+
   return (
     <article className="settlement-card">
-      <h2>Match Ticket</h2>
-      <div className="result">
-        <span className={`result-icon ${settlement.tone}`}>{settlement.icon}</span>
-        <div>
-          <strong>{settlement.title}</strong>
-          <p>{settlement.body}</p>
+      <h2>Your Ticket</h2>
+      {hasPreview ? (
+        <div className="ticket-preview-card">
+          <span className={`result-icon ${iconClass}`}>{selectedOutcome.slice(0, 1)}</span>
+          <div className="ticket-main">
+            <strong>{selectedOutcome}</strong>
+            <small>{market?.title || "Match market"}</small>
+          </div>
+          <div className="ticket-stats">
+            <span className="ticket-stat upside-win">
+              <small>Win</small>
+              <b>+{formatMoney(winAmount)} {stakeCurrency}</b>
+            </span>
+            <span className="ticket-stat stake-risk">
+              <small>Lose</small>
+              <b>-{formatMoney(stakeAmount)} {stakeCurrency}</b>
+            </span>
+          </div>
         </div>
-        <b>{settlement.payout}</b>
-      </div>
+      ) : (
+        <div className="result">
+          <span className={`result-icon ${settlement.tone}`}>{settlement.icon}</span>
+          <div>
+            <strong>{settlement.title}</strong>
+            <p>{settlement.body}</p>
+          </div>
+          <b>{settlement.payout}</b>
+        </div>
+      )}
       {settlement.receipt ? (
         <details className="receipt-proof">
           <summary>
@@ -934,32 +1285,260 @@ function SettlementCard({ settlement }) {
   );
 }
 
-function FeedCard({ feed, portfolio }) {
+function FeedCard({ feed, loading, portfolio }) {
+  const activity = portfolio ? [{ minute: timeStamp(), label: "Account refreshed" }, ...feed] : feed;
   return (
     <article className="feed-card">
-      <h2>Match Activity</h2>
+      <h2>Live Feed</h2>
       <div className="feed-list">
-        {feed.length === 0 ? (
+        {loading ? (
+          <FeedSkeleton />
+        ) : activity.length === 0 ? (
           <div className="feed-item empty">
-            <strong>--</strong>
-            <span>Waiting for match market activity</span>
+            <strong>{timeStamp()}</strong>
+            <span>Waiting for live match events</span>
           </div>
         ) : (
-          feed.map((item, index) => (
+          activity.map((item, index) => (
             <div className="feed-item" key={`${item.minute}-${item.label}-${index}`}>
               <strong>{item.minute}</strong>
               <span>{item.label}</span>
             </div>
           ))
         )}
-        {portfolio ? (
-          <div className="feed-item">
-            <strong>acct</strong>
-            <span>Account refreshed</span>
-          </div>
-        ) : null}
       </div>
     </article>
+  );
+}
+
+function HeroSkeleton() {
+  return (
+    <>
+      <div className="team">
+        <SkeletonLine width="82%" dark tall />
+      </div>
+      <div className="score">
+        <SkeletonLine width="78px" />
+      </div>
+      <div className="team right">
+        <SkeletonLine width="82%" dark tall />
+      </div>
+    </>
+  );
+}
+
+function MarketQuestionSkeleton() {
+  return (
+    <div className="question-block">
+      <SkeletonLine width="94%" tall />
+      <SkeletonLine width="74%" tall />
+      <SkeletonLine width="82%" small />
+    </div>
+  );
+}
+
+function LeaderboardSkeleton() {
+  return Array.from({ length: 3 }, (_, index) => (
+    <div className="leaderboard-row" key={`leaderboard-skeleton-${index}`}>
+      <SkeletonBox className="rank" />
+      <div>
+        <SkeletonLine width="72%" />
+        <SkeletonLine width="54%" small />
+      </div>
+      <SkeletonLine width="42px" />
+    </div>
+  ));
+}
+
+function FeedSkeleton() {
+  return Array.from({ length: 3 }, (_, index) => (
+    <div className="feed-item" key={`feed-skeleton-${index}`}>
+      <SkeletonLine width="48px" />
+      <SkeletonLine width={index === 1 ? "82%" : "64%"} />
+    </div>
+  ));
+}
+
+function ProfileActivitySkeleton() {
+  return (
+    <>
+      <div className="player-profile-panel">
+        <SkeletonBox className="profile-avatar" />
+        <div>
+          <SkeletonLine width="96px" />
+          <SkeletonLine width="148px" small />
+        </div>
+        <SkeletonLine width="56px" />
+      </div>
+      <div className="activity-grid">
+        {Array.from({ length: 28 }, (_, index) => <span className="activity-cell level-0" key={`profile-skeleton-${index}`} />)}
+      </div>
+    </>
+  );
+}
+
+function WalletSkeleton() {
+  return (
+    <>
+      {[0, 1].map((index) => (
+        <div className="wallet-option" key={`wallet-skeleton-${index}`}>
+          <SkeletonLine width="74%" />
+          <SkeletonLine width="48%" small />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function TokenModal({ onCancel, onConfirm, search, selected, setSearch, setSelected }) {
+  const options = TOKEN_OPTIONS.filter((token) => {
+    const haystack = `${token.symbol} ${token.name} ${token.network}`.toLowerCase();
+    return haystack.includes(search.trim().toLowerCase());
+  });
+  const current = TOKEN_OPTIONS.find((token) => token.symbol === selected) || TOKEN_OPTIONS[0];
+
+  return (
+    <div className="modal-backdrop token-modal-backdrop" role="presentation">
+      <section className="token-modal" role="dialog" aria-modal="true" aria-label="Select token and network">
+        <div className="token-modal-head">
+          <div>
+            <h2>Select token</h2>
+            <p>Choose network and currency for this ticket.</p>
+          </div>
+          <button className="profile-icon-button modal-close" onClick={onCancel} type="button">
+            <X size={18} />
+          </button>
+        </div>
+        <label className="token-search">
+          <span>Search</span>
+          <input autoFocus onChange={(event) => setSearch(event.target.value)} placeholder="Search token or network" value={search} />
+        </label>
+        <div className="token-list">
+          {options.map((token) => (
+            <button className={token.symbol === selected ? "token-row active" : "token-row"} key={`${token.network}-${token.symbol}`} onClick={() => setSelected(token.symbol)} type="button">
+              <span className="token-icon">{token.icon}</span>
+              <span>
+                <strong>{token.symbol}</strong>
+                <small>{token.name}</small>
+              </span>
+              <b>{token.network}</b>
+            </button>
+          ))}
+        </div>
+        <div className="token-modal-actions">
+          <button className="chip" onClick={onCancel} type="button">Cancel</button>
+          <button className="activate-button" onClick={onConfirm} type="button">
+            Confirm {current.symbol}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TournamentModal({
+  createTournament,
+  draft,
+  inviteCode,
+  joinInviteTournament,
+  joinTournament,
+  onClose,
+  setDraft,
+  setInviteCode,
+  setView,
+  tournaments,
+  view,
+}) {
+  const visibleTournaments = view === "invite"
+    ? tournaments.filter((item) => item.visibility === "private")
+    : tournaments.filter((item) => item.visibility === "public");
+
+  return (
+    <div className="modal-backdrop tournament-modal-backdrop" role="presentation">
+      <section className="tournament-modal" role="dialog" aria-modal="true" aria-label="Choose a tournament">
+        <div className="tournament-hero">
+          <div>
+            <span className="category">Next up</span>
+            <h2>Join a tournament</h2>
+            <p>Create your own room or jump into a public board.</p>
+          </div>
+          <button className="profile-icon-button modal-close" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="tournament-tabs" role="tablist" aria-label="Tournament mode">
+          {[
+            ["public", "Public"],
+            ["invite", "Invite"],
+            ["create", "Create"],
+          ].map(([id, label]) => (
+            <button className={view === id ? "active" : ""} key={id} onClick={() => setView(id)} type="button">
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {view === "create" ? (
+          <form className="tournament-create" onSubmit={createTournament}>
+            <label>
+              <span>Tournament name</span>
+              <input onChange={(event) => setDraft((value) => ({ ...value, name: event.target.value }))} placeholder="Friday five-a-side" value={draft.name} />
+            </label>
+            <label>
+              <span>Visibility</span>
+              <select onChange={(event) => setDraft((value) => ({ ...value, visibility: event.target.value }))} value={draft.visibility}>
+                <option value="public">Public</option>
+                <option value="private">Invite code</option>
+              </select>
+            </label>
+            <label>
+              <span>Invite code</span>
+              <input onChange={(event) => setDraft((value) => ({ ...value, inviteCode: event.target.value }))} placeholder="Optional" value={draft.inviteCode} />
+            </label>
+            <button className="activate-button" type="submit">
+              <Trophy size={17} />
+              Create Tournament
+            </button>
+          </form>
+        ) : (
+          <>
+            {view === "invite" ? (
+              <div className="invite-code-row">
+                <input onChange={(event) => setInviteCode(event.target.value)} placeholder="Enter invite code" value={inviteCode} />
+                <button className="activate-button" onClick={joinInviteTournament} type="button">Join</button>
+              </div>
+            ) : null}
+            <div className="tournament-list">
+              {visibleTournaments.map((tournament) => (
+                <article className="tournament-row" key={tournament.id}>
+                  <span className="rank"><Trophy size={15} /></span>
+                  <div>
+                    <strong>{tournament.name}</strong>
+                    <small>{tournament.host} - {tournament.players} players - {tournament.visibility}</small>
+                  </div>
+                  <button onClick={() => joinTournament(tournament)} type="button">Join</button>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SkeletonBox({ className = "" }) {
+  return <span className={`skeleton-box ${className}`} aria-hidden="true" />;
+}
+
+function SkeletonLine({ dark = false, small = false, tall = false, width = "100%" }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`skeleton-line ${dark ? "dark" : ""} ${small ? "small" : ""} ${tall ? "tall" : ""}`}
+      style={{ width }}
+    />
   );
 }
 
@@ -1073,9 +1652,29 @@ function receiptLabel(key) {
 function loadProfiles() {
   try {
     const stored = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || "null");
-    return Array.isArray(stored) && stored.length ? stored.map(normalizeProfile) : DEFAULT_PROFILES;
+    return Array.isArray(stored) ? stored.map(normalizeProfile) : DEFAULT_PROFILES;
   } catch {
     return DEFAULT_PROFILES;
+  }
+}
+
+function loadActivityFeed() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(ACTIVITY_STORAGE_KEY) || "[]");
+    return Array.isArray(stored)
+      ? stored.filter((item) => item && item.minute && item.label).slice(0, 6)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadTournaments() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TOURNAMENT_STORAGE_KEY) || "null");
+    return Array.isArray(stored) && stored.length ? stored : DEFAULT_TOURNAMENTS;
+  } catch {
+    return DEFAULT_TOURNAMENTS;
   }
 }
 
@@ -1087,12 +1686,15 @@ function normalizeProfile(profile = {}) {
   return {
     id: profile.id,
     name: profile.name,
+    username: usernameFrom(profile.username || profile.name),
     team: profile.team || "USA",
     style: profile.style || "Striker",
+    twitter: profile.twitter || "",
+    discord: profile.discord || "",
+    walletId: profile.walletId || profile.wallet || profile.address || "",
+    managedAccount: profile.managedAccount || "",
     wins,
     losses,
-    points: numberOr(profile.points, undefined, 1200 + wins * 80 - losses * 20),
-    streak: numberOr(profile.streak, undefined, 0),
   };
 }
 
@@ -1103,14 +1705,95 @@ function numberOr(value, fallbackValue, finalFallback) {
   return Number.isFinite(fallback) ? fallback : finalFallback;
 }
 
-function initials(name) {
-  return String(name || "?")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+function teamFlag(team) {
+  return TEAM_FLAGS[team] || "\u{1F3F3}\uFE0F";
+}
+
+function timeStamp() {
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date());
+}
+
+function buildActivityCells(feed) {
+  const cells = Array.from({ length: 28 }, () => 0);
+  for (const [index] of (feed || []).entries()) {
+    const cellIndex = Math.max(0, cells.length - 1 - index);
+    cells[cellIndex] = Math.min(4, cells[cellIndex] + 1);
+  }
+  return cells;
+}
+
+function fixtureFromMarket(market) {
+  const title = String(market?.title || "");
+  const versus = title.match(/^(.+?)\s+(?:vs\.?|v\.?|beat|defeat)\s+(.+?)(?:\s+in\s+|\?|$)/i);
+  if (versus) {
+    return {
+      home: cleanTeamName(versus[1]),
+      away: cleanTeamName(versus[2]),
+      label: `${cleanTeamName(versus[1])} vs ${cleanTeamName(versus[2])}`,
+    };
+  }
+
+  return {
+    home: market ? market.optionA || "Home" : "Team X",
+    away: market ? market.optionB || "Away" : "Team Y",
+    label: market ? `${market.optionA || "Team X"} vs ${market.optionB || "Team Y"}` : "Team X vs Team Y",
+  };
+}
+
+function cleanTeamName(value) {
+  return String(value || "")
+    .replace(/^will\s+/i, "")
+    .replace(/\s+their\s+next.*$/i, "")
+    .trim();
+}
+
+function leagueFromMarket(market) {
+  const rawLeague = market?.league || market?.raw?.league || market?.raw?.leagueName || market?.raw?.tournament || market?.raw?.competition;
+  const fallback = market?.category && !/^football$/i.test(market.category) ? market.category : "League";
+  return rawLeague || fallback;
+}
+
+function usernameFrom(value) {
+  return String(value || "player")
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9_]+/g, "")
+    .slice(0, 18) || "player";
+}
+
+function usernameFromProfilePath() {
+  const match = window.location.pathname.match(/^\/@([a-z0-9_]+)/i);
+  return match ? usernameFrom(match[1]) : "";
+}
+
+function profileIdFrom({ username, walletId, name }) {
+  if (walletId) return `wallet-${walletId.toLowerCase()}`;
+  return `${usernameFrom(username || name)}-${Date.now()}`;
+}
+
+function identityKey(profile) {
+  if (profile.walletId) return `wallet:${String(profile.walletId).toLowerCase()}`;
+  if (profile.username) return `username:${String(profile.username).toLowerCase()}`;
+  return `name:${String(profile.name || "").toLowerCase()}:team:${String(profile.team || "").toLowerCase()}`;
+}
+
+function dedupeProfiles(items) {
+  const byIdentity = new Map();
+  for (const raw of items || []) {
+    const profile = normalizeProfile(raw);
+    const key = identityKey(profile);
+    const existing = byIdentity.get(key);
+    if (!existing || profile.wins > existing.wins || profile.losses < existing.losses) {
+      byIdentity.set(key, { ...existing, ...profile });
+    }
+  }
+  return [...byIdentity.values()];
+}
+
+function attachWalletToProfiles(items, activeProfileId, walletId, managedAccount) {
+  return dedupeProfiles((items || []).map((item) => (
+    item.id === activeProfileId ? { ...item, walletId, managedAccount: managedAccount || item.managedAccount } : item
+  )));
 }
 
 createRoot(document.getElementById("root")).render(<App />);
